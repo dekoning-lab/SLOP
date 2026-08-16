@@ -1,0 +1,54 @@
+# --- Local scratch that's useful to keep around but shouldn't be committed ---
+
+# Generated / benchmark alignments
+test_*.fasta
+*.large.fasta
+scratch/
+tmp/
+
+# Exported output
+*.pdf
+!docs/**/*.pdf
+alignment_export.*
+*.export.png
+
+# Emscripten toolchain (installed alongside the repo when rebuilding the WASM)
+emsdk/
+.emscripten_cache/
+*.o
+*.obj
+*.bc
+
+# Agent / assistant working files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.claude/
+.codex/
+*_WORKLOG.md
+*_WORK_LOG.md
+worklog.md
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
