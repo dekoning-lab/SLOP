@@ -57,6 +57,7 @@ Load a FASTA or PHYLIP file with **Open**, try `examples/example_codon.fasta`, o
 | Path | Role |
 |---|---|
 | `index.html` | The application: UI, interaction wiring, export dialogs |
+| `slop.css` | Prebuilt Tailwind stylesheet — regenerate with `./build_css.sh` |
 | `webgl/` | Renderer — WebGL viewport, texture atlas, and the engine adapter |
 | `exporters/` | Image export |
 | `msa_engine_optimized.cpp` | Core engine: parsing, editing, selection, stats, scoring |
@@ -64,13 +65,23 @@ Load a FASTA or PHYLIP file with **Open**, try `examples/example_codon.fasta`, o
 | `msa_engine_opt.js`, `msa_engine_opt.wasm` | Prebuilt WebAssembly engine (committed, so no build step is needed) |
 | `assets/` | JetBrains Mono, embedded into exported PDFs |
 
-## Rebuilding the WebAssembly engine
+## Rebuilding
 
-The compiled engine is committed, so you only need this if you change the C/C++ sources. It requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html):
+Both build products are committed, so neither step is needed to run SLOP.
+
+**The WebAssembly engine** — only if you change the C/C++ sources. Requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html):
 
 ```bash
 source /path/to/emsdk/emsdk_env.sh
 ./build_wasm.sh
+```
+
+Then bump `ENGINE_VERSION` in `index.html` (and the matching `?v=` on the engine `<script>` tag) so browsers pick up the new binary — the engine is cached aggressively on purpose.
+
+**The stylesheet** — only if you add or change a Tailwind class in `index.html`:
+
+```bash
+./build_css.sh
 ```
 
 Verbose logging is off by default in both layers. For the renderer, set `window.SLOP_DEBUG = true` in the console before loading the page. For the engine, rebuild with tracing compiled in:

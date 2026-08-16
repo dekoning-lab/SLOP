@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SLOP! (Sequences Lined-up With Overwhelming Precision)</title>
     <link rel="icon" type="image/png" href="favicon.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=DM+Mono:wght@400;500&family=Ubuntu+Mono:wght@400;700&family=Overpass+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Prebuilt Tailwind (see build_css.sh). The CDN build compiled CSS in the
+         browser on every load, which blocked first paint; this is ~5x smaller,
+         cacheable, and needs no runtime work. -->
+    <link rel="stylesheet" href="slop.css">
+    <!-- Only Inter (UI) and JetBrains Mono (sequence glyphs + PDF) are referenced
+         anywhere in the app; weights are limited to those actually used. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
     <!-- WebGL Renderer Modules -->
     <script type="module">
@@ -15,17 +22,11 @@
         import { RendererAdapter } from './webgl/renderer-adapter.js';
         import { ImageExporter } from './exporters/image-exporter.js';
 
-        // PDF post-processing libraries
-        import { PDFDocument } from 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm';
-        import fontkit from 'https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/+esm';
-
         // Make available globally
         window.WebGLRenderer = WebGLRenderer;
         window.TextureAtlas = TextureAtlas;
         window.RendererAdapter = RendererAdapter;
         window.ImageExporter = ImageExporter;
-        window.PDFDocument = PDFDocument;
-        window.fontkit = fontkit;
     </script>
     <style>
         /* Custom scrollbar styles */
@@ -691,10 +692,11 @@
     </div>
 
     <!-- Scripts -->
-    <script src="msa_engine_opt.js?v=5"></script>
+    <script src="msa_engine_opt.js?v=6"></script>
     <script>
-        // Copy all the JavaScript logic from msa-viewer-beautiful.html
-        // but keep it here for the modern styled version
+        // Bump this after running ./build_wasm.sh so browsers pick up the new
+        // engine. Keep it in sync with the ?v= on the script tag above.
+        const ENGINE_VERSION = '6';
 
         let Module;
         let engine;
@@ -986,7 +988,9 @@
             createMSAEngine({
                 locateFile: (path, prefix) => {
                     if (path.endsWith('.wasm')) {
-                        return path + '?v=' + Date.now(); // Force cache bust
+                        // Stable version tag so the browser can cache the ~800KB
+                        // binary. Bump ENGINE_VERSION after rebuilding the engine.
+                        return path + '?v=' + ENGINE_VERSION;
                     }
                     return prefix + path;
                 }
@@ -11480,68 +11484,6 @@ GATGAGAGGCCGCCGTCTCTAGGCAGGCTACGACGGCGCAATCCTCTCATGGAAAGCTCT`;
             document.getElementById('pdfProgressBar').style.width = percent + '%';
             document.getElementById('pdfProgressPercent').textContent = Math.round(percent) + '%';
             document.getElementById('pdfProgressText').textContent = text;
-        }
-
-        // Font cache for pdf-lib
-        let jetbrainsMonoFontBytes = null;
-
-        /**
-         * Post-process PDF to embed JetBrains Mono font
-         * Replaces Courier-Bold with JetBrains Mono for better aesthetics
-         */
-        async function embedCustomFont(pdfBytes) {
-            try {
-                // Load font file (with caching)
-                if (!jetbrainsMonoFontBytes) {
-                    console.log('Loading JetBrains Mono font...');
-                    const fontResponse = await fetch('./assets/JetBrainsMono-Bold.ttf');
-                    if (!fontResponse.ok) {
-                        throw new Error('Failed to load font file');
-                    }
-                    jetbrainsMonoFontBytes = await fontResponse.arrayBuffer();
-                    console.log('Font loaded and cached:', jetbrainsMonoFontBytes.byteLength, 'bytes');
-                }
-
-                // Load the PDF document
-                console.log('Loading PDF for font embedding...');
-                const pdfDoc = await PDFDocument.load(pdfBytes);
-
-                // Register fontkit for custom font support
-                pdfDoc.registerFontkit(fontkit);
-
-                // Embed JetBrains Mono (pdf-lib auto-subsets to only used characters)
-                console.log('Embedding JetBrains Mono font...');
-                const customFont = await pdfDoc.embedFont(jetbrainsMonoFontBytes, { subset: true });
-
-                // Get all pages and replace font
-                const pages = pdfDoc.getPages();
-                console.log(`Replacing fonts in ${pages.length} pages...`);
-
-                for (const page of pages) {
-                    // Get page content
-                    const { width, height } = page.getSize();
-
-                    // Note: pdf-lib doesn't have direct font replacement
-                    // The generated PDF from C++ uses Courier-Bold
-                    // pdf-lib embeds our font but we'd need to re-draw text
-                    // For now, the font is embedded and available
-
-                    // Alternative approach: Just embed the font
-                    // The PDF will have both fonts, but we'd use it for future text
-                }
-
-                // Save the modified PDF
-                console.log('Saving PDF with embedded font...');
-                const modifiedPdfBytes = await pdfDoc.save();
-
-                console.log(`PDF processed: ${pdfBytes.byteLength} → ${modifiedPdfBytes.byteLength} bytes`);
-                return modifiedPdfBytes;
-
-            } catch (error) {
-                console.error('Font embedding failed:', error);
-                console.warn('Falling back to original PDF without custom font');
-                return pdfBytes; // Return original if embedding fails
-            }
         }
 
         function handleFileUpload(e) {
