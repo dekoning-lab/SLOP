@@ -16,6 +16,8 @@ A GPU-accelerated multiple sequence alignment viewer and editor that runs entire
 
 SLOP pairs a WebGL front end with a WebAssembly (C++) engine, so editing stays smooth on alignments that bring conventional viewers to a crawl — hundreds of taxa by tens of thousands of columns, at interactive frame rates. Everything runs client-side: no server, no upload, no install. Your sequences never leave your machine.
 
+> **Origin.** SLOP is an educational project. It began as a classroom exercise for **MDSC 308** at the University of Calgary in the fall of 2025, and grew from there.
+
 ![SLOP viewing a 100 × 3000 nucleotide alignment](docs/screenshot.png)
 
 ## Features
