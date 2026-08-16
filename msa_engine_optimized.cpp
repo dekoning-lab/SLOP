@@ -16,6 +16,15 @@ extern "C" {
 
 using namespace emscripten;
 
+// Verbose engine tracing. Off in normal builds so the browser console stays
+// usable; rebuild with -DSLOP_DEBUG to turn it back on. Genuine errors and
+// warnings are printed unconditionally and do not use this macro.
+#ifdef SLOP_DEBUG
+    #define SLOP_LOG(...) printf(__VA_ARGS__)
+#else
+    #define SLOP_LOG(...) ((void)0)
+#endif
+
 class MSAEngine {
 private:
     // Store sequences as contiguous strings for better memory locality
@@ -227,19 +236,19 @@ public:
 
     // Translate all sequences completely
     void translateAllSequences() {
-        printf("translateAllSequences called, sequences.size=%zu, codon_phase=%d\n", sequences.size(), codon_phase);
+        SLOP_LOG("translateAllSequences called, sequences.size=%zu, codon_phase=%d\n", sequences.size(), codon_phase);
         amino_acid_sequences.clear();
         amino_acid_sequences.resize(sequences.size());
 
         for (size_t i = 0; i < sequences.size(); i++) {
             amino_acid_sequences[i] = translateSequence(i);
             if (i == 0) {
-                printf("Translated seq 0: '%s'\n", amino_acid_sequences[i].substr(0, 30).c_str());
+                SLOP_LOG("Translated seq 0: '%s'\n", amino_acid_sequences[i].substr(0, 30).c_str());
             }
         }
 
         amino_acid_translations_valid = true;
-        printf("Translation complete, valid=%d\n", amino_acid_translations_valid);
+        SLOP_LOG("Translation complete, valid=%d\n", amino_acid_translations_valid);
     }
 
     // Translate a range of sequences
@@ -588,7 +597,7 @@ public:
 
             // Use pre-translated amino acid sequences if in amino acid display mode
             if (r == 0 && startCol == 0) {
-                printf("getRenderData: aminoAcidMode=%d, codon_mode=%d, valid=%d, size=%zu\n",
+                SLOP_LOG("getRenderData: aminoAcidMode=%d, codon_mode=%d, valid=%d, size=%zu\n",
                     aminoAcidMode, codon_mode_enabled, amino_acid_translations_valid, amino_acid_sequences.size());
             }
             if (aminoAcidMode && codon_mode_enabled && amino_acid_translations_valid && r < amino_acid_sequences.size()) {
@@ -1292,7 +1301,7 @@ public:
         int blocks_per_page = 1;
         float block_spacing_rows = 2.0f;  // Visual spacing between blocks (in row units)
 
-        printf("DEBUG: Initial values - total_rows=%d, total_cols_render=%d, rows_per_page=%d, cols_per_page=%d\n",
+        SLOP_LOG("DEBUG: Initial values - total_rows=%d, total_cols_render=%d, rows_per_page=%d, cols_per_page=%d\n",
                total_rows, total_cols_render, rows_per_page, cols_per_page);
 
         // Determine if wrapping would be beneficial
@@ -1300,7 +1309,7 @@ public:
         float rows_used_ratio = rows_per_page_f > 0.0f
             ? (static_cast<float>(total_rows) / rows_per_page_f)
             : 1.0f;
-        printf("DEBUG: rows_used_ratio=%.2f\n", rows_used_ratio);
+        SLOP_LOG("DEBUG: rows_used_ratio=%.2f\n", rows_used_ratio);
 
         if (rows_used_ratio < 0.5f && total_cols_render > cols_per_page) {
             // Calculate how many blocks we can fit vertically
@@ -1329,28 +1338,28 @@ public:
         if (enable_wrapping) {
             int total_col_blocks = (total_cols_render + cols_per_page - 1) / cols_per_page;
             total_pages = (total_col_blocks + blocks_per_page - 1) / blocks_per_page;
-            printf("DEBUG: Wrapping enabled - blocks_per_page=%d, total_col_blocks=%d, total_pages=%d\n",
+            SLOP_LOG("DEBUG: Wrapping enabled - blocks_per_page=%d, total_col_blocks=%d, total_pages=%d\n",
                    blocks_per_page, total_col_blocks, total_pages);
         } else {
             // Traditional grid pagination
             int pages_h = (total_cols_render + cols_per_page - 1) / cols_per_page;
             int pages_v = (total_rows + rows_per_page - 1) / rows_per_page;
             total_pages = pages_h * pages_v;
-            printf("DEBUG: Traditional pagination - pages_h=%d, pages_v=%d, total_pages=%d\n",
+            SLOP_LOG("DEBUG: Traditional pagination - pages_h=%d, pages_v=%d, total_pages=%d\n",
                    pages_h, pages_v, total_pages);
         }
 
         // Create PDF with TrueType font
         AlignmentPDF pdf(page_width, page_height);
 
-        printf("DEBUG: Loading font from: %s\n", font_path.c_str());
+        SLOP_LOG("DEBUG: Loading font from: %s\n", font_path.c_str());
         bool font_loaded = pdf.loadFont(font_path);
         if (!font_loaded) {
             printf("WARNING: Failed to load font from %s - continuing with default\n", font_path.c_str());
             // Don't fail completely - we can still test the logic
             // return val::null();
         } else {
-            printf("DEBUG: Font loaded successfully\n");
+            SLOP_LOG("DEBUG: Font loaded successfully\n");
         }
 
         // Ensure amino acid translations are available when needed
@@ -1672,12 +1681,12 @@ public:
 
         // Save to temp file
         const char* temp_file = "/tmp/alignment_custom_font.pdf";
-        printf("DEBUG: Attempting to save PDF to %s\n", temp_file);
+        SLOP_LOG("DEBUG: Attempting to save PDF to %s\n", temp_file);
         if (!pdf.save(temp_file)) {
             printf("ERROR: pdf.save() returned false\n");
             return val::null();
         }
-        printf("DEBUG: PDF saved successfully\n");
+        SLOP_LOG("DEBUG: PDF saved successfully\n");
 
         // Read file back using C FILE API for better binary handling in Emscripten
         FILE* fp = fopen(temp_file, "rb");
@@ -1700,7 +1709,7 @@ public:
             return val::null();
         }
 
-        printf("DEBUG: PDF file read successfully: %zu bytes (%.0f KB)\n", bytes_read, bytes_read / 1024.0);
+        SLOP_LOG("DEBUG: PDF file read successfully: %zu bytes (%.0f KB)\n", bytes_read, bytes_read / 1024.0);
 
         // Copy into a fresh Uint8Array so the data survives past this scope
         val uint8Array = val::global("Uint8Array").new_(static_cast<unsigned int>(buffer.size()));

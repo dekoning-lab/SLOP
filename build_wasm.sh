@@ -9,6 +9,10 @@
 #
 # Produces msa_engine_opt.js and msa_engine_opt.wasm, both of which are
 # committed to the repository so the app runs without a build step.
+#
+# Set EMCC_EXTRA_FLAGS to append compiler flags, e.g. to compile in the
+# engine's verbose tracing:
+#   EMCC_EXTRA_FLAGS=-DSLOP_DEBUG ./build_wasm.sh
 
 set -euo pipefail
 
@@ -18,11 +22,18 @@ if ! command -v emcc >/dev/null 2>&1; then
     exit 1
 fi
 
+# Word-split intentionally so multiple flags can be passed in one variable.
+read -r -a extra_flags <<< "${EMCC_EXTRA_FLAGS:-}"
+
 echo "Building SLOP WebAssembly engine..."
 
+# DEFAULT_TO_CXX is a link-time setting: it pulls in the C++ runtime even though
+# emcc (not em++) is the driver, which is required because pdfgen.c is in the
+# input list. Compiling stays per-extension, so pdfgen.c is still built as C.
 emcc -O3 \
     msa_engine_optimized.cpp alignment_pdf.cpp font_manager.cpp pdfgen.c \
     -o msa_engine_opt.js \
+    -s DEFAULT_TO_CXX=1 \
     -s MODULARIZE=1 \
     -s EXPORT_NAME='createMSAEngine' \
     --bind \
@@ -30,7 +41,8 @@ emcc -O3 \
     -s MAXIMUM_MEMORY=4GB \
     -s USE_FREETYPE=1 \
     -s FORCE_FILESYSTEM=1 \
-    -s EXPORTED_RUNTIME_METHODS='["FS"]'
+    -s EXPORTED_RUNTIME_METHODS='["FS"]' \
+    ${extra_flags[@]+"${extra_flags[@]}"}
 
 echo "Build complete:"
 echo "  - msa_engine_opt.js"

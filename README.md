@@ -73,7 +73,11 @@ source /path/to/emsdk/emsdk_env.sh
 ./build_wasm.sh
 ```
 
-Enable verbose renderer logging in the browser console with `window.SLOP_DEBUG = true` before loading the page.
+Verbose logging is off by default in both layers. For the renderer, set `window.SLOP_DEBUG = true` in the console before loading the page. For the engine, rebuild with tracing compiled in:
+
+```bash
+EMCC_EXTRA_FLAGS=-DSLOP_DEBUG ./build_wasm.sh
+```
 
 ## Known limitations
 
