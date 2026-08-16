@@ -1367,6 +1367,91 @@
             return Math.max(0, Math.min(left, engine.getMaxLength() - 1));
         }
 
+        // Display state is really two variables: the engine's codon-mode flag and,
+        // while that flag is on, codonDisplayMode. Nucleotide view *is* codon mode
+        // being off — every reader of codonDisplayMode is already gated on
+        // getCodonMode(). T used to require codon mode to be on and only flipped
+        // codon <-> amino, so once you pressed C there was no way back to
+        // nucleotides with T alone. These walk all three as a ring.
+        function getDisplayMode() {
+            if (!engine || !engine.getCodonMode()) return 'nucleotide';
+            return codonDisplayMode === 'amino' ? 'amino' : 'codon';
+        }
+
+        function cycleDisplayMode() {
+            if (!engine || !engine.isDNA()) return;
+            const from = getDisplayMode();
+            const next = from === 'nucleotide' ? 'codon'
+                       : from === 'codon' ? 'amino'
+                       : 'nucleotide';
+            setDisplayMode(next);
+        }
+
+        function setDisplayMode(next) {
+            if (!engine || !engine.isDNA()) return;
+            const from = getDisplayMode();
+            if (from === next) return;
+
+            // Remember where the user is looking so the view can be re-centred on
+            // the same column afterwards; column widths change between modes.
+            const selection = engine.getSelectionBounds();
+            let targetCol = -1;
+            if (selection.minRow >= 0) {
+                targetCol = Math.floor((selection.minCol + selection.maxCol) / 2);
+            } else {
+                const viewportCenterX = viewport.scrollLeft + viewport.clientWidth / 2;
+                targetCol = getColumnFromPixelPosition(viewportCenterX - LABEL_WIDTH);
+            }
+
+            // codonDisplayMode only means anything while codon mode is on, so set it
+            // first and let toggleCodonMode() carry the heavier work (translation,
+            // minimap and renderer cache invalidation, scroll space, the animation).
+            codonDisplayMode = next === 'amino' ? 'amino' : 'codon';
+            window.codonDisplayMode = codonDisplayMode;
+
+            if (next === 'amino') {
+                engine.translateAllSequences();
+            }
+            if ((next === 'nucleotide') !== (from === 'nucleotide')) {
+                toggleCodonMode();
+            }
+
+            // Column indices are nucleotide indices in both nucleotide and codon
+            // views, so only the amino transitions need remapping.
+            if (selection.minRow >= 0) {
+                const phase = engine.getCodonPhase() - 1;
+                const codonStartOf = (col) => {
+                    const adjusted = col - phase;
+                    return adjusted >= 0 ? Math.floor(adjusted / 3) * 3 + phase : col;
+                };
+
+                if (from === 'amino' && next !== 'amino') {
+                    // Expand back out to whole codons.
+                    const newMinCol = codonStartOf(selection.minCol);
+                    const newMaxCol = Math.min(codonStartOf(selection.maxCol) + 2, engine.getMaxLength() - 1);
+                    engine.startSelection(selection.minRow, newMinCol);
+                    engine.updateSelection(selection.maxRow, newMaxCol);
+                } else if (from !== 'amino' && next === 'amino') {
+                    // Contract to codon starts, which is what amino columns index.
+                    engine.startSelection(selection.minRow, codonStartOf(selection.minCol));
+                    engine.updateSelection(selection.maxRow, codonStartOf(selection.maxCol));
+                }
+            }
+
+            if (targetCol >= 0) {
+                const newPixelPos = getColumnPixelPosition(targetCol);
+                const viewportWidth = viewport.clientWidth - LABEL_WIDTH;
+                viewport.scrollLeft = Math.max(0, newPixelPos - viewportWidth / 2);
+            }
+
+            clearWebGLCache();
+            updateScrollSpace();
+            updateVisibleRange();
+            renderVisible();
+            updateStatus();
+            updateSelectionInfo();
+        }
+
         function toggleCodonMode() {
             if (!engine || !engine.isDNA()) return;
 
@@ -4434,111 +4519,13 @@
                     }
                 }
             }
-            // T key: Toggle between codon display modes (only when in codon mode)
+            // T key: cycle display mode (nucleotide -> codon -> amino -> ...)
             else if (e.key === 't' || e.key === 'T') {
                 if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-                    if (engine && engine.isDNA() && engine.getCodonMode()) {
+                    // Protein input has no codon reading to cycle through.
+                    if (engine && engine.isDNA()) {
                         e.preventDefault();
-                        // Store current selection or viewport center for repositioning
-                        const selection = engine.getSelectionBounds();
-                        let targetCol = -1;
-
-                        if (selection.minRow >= 0) {
-                            // If there's a selection, use its center column
-                            targetCol = Math.floor((selection.minCol + selection.maxCol) / 2);
-                        } else {
-                            // Otherwise use the center of the current viewport
-                            const scrollLeft = viewport.scrollLeft;
-                            const viewportCenterX = scrollLeft + viewport.clientWidth / 2;
-                            targetCol = getColumnFromPixelPosition(viewportCenterX - LABEL_WIDTH);
-                        }
-
-                        // Store the old mode to calculate scroll adjustment
-                        const oldMode = codonDisplayMode;
-
-                        // Toggle between display modes: 'codon' <-> 'amino'
-                        if (codonDisplayMode === 'codon') {
-                            codonDisplayMode = 'amino';
-                            // Regenerate translations to ensure they use latest translateCodon logic
-                            console.log('Calling translateAllSequences()');
-                            engine.translateAllSequences();
-                            console.log('Translation complete');
-                        } else {
-                            codonDisplayMode = 'codon';
-                        }
-                        window.codonDisplayMode = codonDisplayMode;
-
-                        // Adjust selection when switching modes
-                        if (selection.minRow >= 0) {
-                            const phase = engine.getCodonPhase() - 1;
-
-                            if (oldMode === 'amino' && codonDisplayMode !== 'amino') {
-                                // Switching FROM amino acid view TO codon/annotated view
-                                // Expand selection to cover full codons
-                                let newMinCol = selection.minCol;
-                                let newMaxCol = selection.maxCol;
-
-                                // Expand minCol to start of its codon
-                                const adjustedMinCol = newMinCol - phase;
-                                if (adjustedMinCol >= 0) {
-                                    const codonStart = Math.floor(adjustedMinCol / 3) * 3 + phase;
-                                    newMinCol = codonStart;
-                                }
-
-                                // Expand maxCol to end of its codon
-                                const adjustedMaxCol = newMaxCol - phase;
-                                if (adjustedMaxCol >= 0) {
-                                    const codonStart = Math.floor(adjustedMaxCol / 3) * 3 + phase;
-                                    newMaxCol = Math.min(codonStart + 2, engine.getMaxLength() - 1);
-                                }
-
-                                // Update selection with expanded columns
-                                engine.startSelection(selection.minRow, newMinCol);
-                                engine.updateSelection(selection.maxRow, newMaxCol);
-
-                            } else if (oldMode !== 'amino' && codonDisplayMode === 'amino') {
-                                // Switching TO amino acid view FROM codon/annotated view
-                                // Contract selection to codon starts
-                                let newMinCol = selection.minCol;
-                                let newMaxCol = selection.maxCol;
-
-                                // Contract to codon starts
-                                const adjustedMinCol = newMinCol - phase;
-                                if (adjustedMinCol >= 0) {
-                                    const codonStart = Math.floor(adjustedMinCol / 3) * 3 + phase;
-                                    newMinCol = codonStart;
-                                }
-
-                                const adjustedMaxCol = newMaxCol - phase;
-                                if (adjustedMaxCol >= 0) {
-                                    const codonStart = Math.floor(adjustedMaxCol / 3) * 3 + phase;
-                                    newMaxCol = codonStart;
-                                }
-
-                                // Update selection with codon starts
-                                engine.startSelection(selection.minRow, newMinCol);
-                                engine.updateSelection(selection.maxRow, newMaxCol);
-                            }
-                        }
-
-                        // Calculate the new scroll position to keep the target column centered
-                        if (targetCol >= 0) {
-                            const newPixelPos = getColumnPixelPosition(targetCol);
-                            const viewportWidth = viewport.clientWidth - LABEL_WIDTH;
-                            const newScrollLeft = Math.max(0, newPixelPos - viewportWidth / 2);
-
-                            // Apply the new scroll position
-                            viewport.scrollLeft = newScrollLeft;
-                        }
-
-                        // Clear cache to force rebuild with new display mode
-                        clearWebGLCache();
-
-                        // Need to update scroll space when switching to/from amino acid mode
-                        updateScrollSpace();
-                        updateVisibleRange();
-                        renderVisible();
-                        updateStatus();
+                        cycleDisplayMode();
                     }
                 }
             }
@@ -4634,47 +4621,14 @@
             }
         }
 
+        // The "Display Mode" hint in the shortcut bar is clickable. It used to carry
+        // its own copy of the mode-switching logic, with the same codon-only gate and
+        // two-state toggle as the T key; route both through one implementation so
+        // they cannot drift apart.
         function toggleDisplayModeFromShortcut() {
-            if (engine && engine.isDNA() && engine.getCodonMode()) {
-                // Store current selection or viewport center for repositioning
-                const selection = engine.getSelectionBounds();
-                let targetCol = -1;
-
-                if (selection.minRow >= 0) {
-                    targetCol = Math.floor((selection.minCol + selection.maxCol) / 2);
-                } else {
-                    const viewportCenter = Math.floor((viewport.scrollLeft + viewport.clientWidth / 2 - LABEL_WIDTH) / CELL_WIDTH);
-                    targetCol = viewportCenter;
-                }
-
-                // Toggle display mode
-                codonDisplayMode = (codonDisplayMode === 'codon') ? 'amino' : 'codon';
-                window.codonDisplayMode = codonDisplayMode;
-
-                // Regenerate translations when switching to amino acid mode
-                if (codonDisplayMode === 'amino') {
-                    engine.translateAllSequences();
-                }
-
-                // Clear WebGL cache to force full redraw with new spacing
-                clearWebGLCache();
-
-                // Update scroll space and visible range
-                updateScrollSpace();
-                updateVisibleRange();
-
-                // Render with new display mode
-                renderVisible();
-                renderUIOverlay();
-                renderMinimap();
-
-                // Update UI button text
-                const displayModeBtn = document.getElementById('toggleCodonDisplay');
-                if (displayModeBtn) {
-                    displayModeBtn.textContent = codonDisplayMode === 'codon' ? '🧬 Show Amino Acids' : '🧬 Show Codons';
-                }
-            }
+            cycleDisplayMode();
         }
+
 
         function toggleDataPanelFromShortcut() {
             if (engine && engine.isDNA()) {

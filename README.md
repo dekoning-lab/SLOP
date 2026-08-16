@@ -50,7 +50,7 @@ Load a FASTA or PHYLIP file with **Open**, try `examples/example_codon.fasta`, o
 | `M` | Toggle minimap | | `⌘`/`Ctrl` + `S` | Save alignment |
 | `S` | Toggle stats panel | | `⌘`/`Ctrl` + `A` | Select all |
 | `C` | Toggle codon mode | | `⌘`/`Ctrl` + `F` | Find |
-| `T` | Cycle display mode | | `⌘`/`Ctrl` + `Z` | Undo |
+| `T` | Nucleotide → codon → amino | | `⌘`/`Ctrl` + `Z` | Undo |
 | `D` | Toggle data panel | | `⌘`/`Ctrl` + `⇧` + `Z` | Redo |
 | `G` | Go to position | | `Delete` | Remove gaps |
 
