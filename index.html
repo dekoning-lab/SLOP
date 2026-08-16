@@ -608,6 +608,17 @@
             </div>
 
             <div class="space-y-6">
+                <!-- Export range -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Export Range</label>
+                    <select id="pdfExportRange" class="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                        <option value="all" selected>Entire alignment</option>
+                        <option value="selection">Current selection</option>
+                        <option value="view">Current view</option>
+                    </select>
+                    <p id="pdfRangeNote" class="hidden mt-2 text-xs text-amber-400 leading-snug"></p>
+                </div>
+
                 <!-- Page Layout -->
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -1302,6 +1313,18 @@
         }
 
         // Helper function to convert pixel position to column (inverse of above)
+        // Hit test for the label/alignment divider, shared by the pointerdown
+        // handler and the hover cursor so the two can't drift apart. The zone is
+        // deliberately asymmetric: it reaches well into the label area, where
+        // there is nothing else to click, but only just past the divider line so
+        // that column 0 stays selectable.
+        const DIVIDER_GRAB_LEFT = 8;   // px into the label area
+        const DIVIDER_GRAB_RIGHT = 3;  // px into the alignment area
+        function isOverDivider(canvasX) {
+            const offset = canvasX - LABEL_WIDTH;
+            return offset >= -DIVIDER_GRAB_LEFT && offset <= DIVIDER_GRAB_RIGHT;
+        }
+
         function getColumnFromPixelPosition(pixelPos) {
             if (!engine) {
                 return Math.floor(pixelPos / CELL_WIDTH);
@@ -2011,10 +2034,18 @@
             // End of setZoom function - continue with event listeners
 
             document.addEventListener('click', (e) => {
-                if (!canvas.contains(e.target) && !e.target.closest('.controls')) {
-                    engine.clearSelection();
-                    renderVisible();
-                }
+                if (canvas.contains(e.target)) return;
+
+                // Clicking genuinely empty space deselects. Clicking app chrome must
+                // not: this guard used to look for a `.controls` class that exists
+                // nowhere in the document, so every click outside the canvas — every
+                // toolbar button, every dialog — silently dropped the selection. That
+                // made anything selection-driven (such as exporting only the current
+                // selection) impossible to reach.
+                if (e.target.closest('header, button, select, input, textarea, label, a, [role="dialog"], #pdfExportDialog')) return;
+
+                engine.clearSelection();
+                renderVisible();
             });
 
             // Codon mode event handlers
@@ -3771,8 +3802,12 @@
             const canvasY = e.clientY - rect.top;
 
             // Check if clicking on divider (±8px hit area)
-            const distanceFromDivider = Math.abs(canvasX - LABEL_WIDTH);
-            if (distanceFromDivider < 8) {
+            // The divider grab zone used to be symmetric (±8px), which swallowed
+            // the left third of column 0 — a 24px cell — so clicks there started a
+            // divider drag instead of selecting. Bias the zone into the label side,
+            // and skip it entirely for Cmd/Ctrl-click, which unambiguously means
+            // "select this column".
+            if (isOverDivider(canvasX) && !(e.metaKey || e.ctrlKey)) {
                 isDraggingDivider = true;
                 canvas.style.cursor = 'ew-resize';
                 e.preventDefault();
@@ -4006,7 +4041,7 @@
             }
 
             // Show cursor change when hovering over divider
-            if (!isDragging && !isSelecting && !isDraggingRow && Math.abs(canvasX - LABEL_WIDTH) < 8) {
+            if (!isDragging && !isSelecting && !isDraggingRow && isOverDivider(canvasX)) {
                 canvas.style.cursor = 'ew-resize';
             } else if (!isDragging && !isSelecting && !isDraggingRow) {
                 canvas.style.cursor = 'default';
@@ -10934,7 +10969,7 @@ GATGAGAGGCCGCCGTCTCTAGGCAGGCTACGACGGCGCAATCCTCTCATGGAAAGCTCT`;
 
             if (!dialog.dataset.listenersAttached) {
                 // Add event listeners for live updates
-                ['pdfOrientation', 'pdfCellSize', 'pdfIncludeLabels', 'pdfIncludeRuler', 'pdfScalingMode', 'pdfFitPages'].forEach(id => {
+                ['pdfExportRange', 'pdfOrientation', 'pdfCellSize', 'pdfIncludeLabels', 'pdfIncludeRuler', 'pdfScalingMode', 'pdfFitPages'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) {
                         el.addEventListener('change', updatePDFEstimate);
@@ -10975,6 +11010,62 @@ GATGAGAGGCCGCCGTCTCTAGGCAGGCTACGACGGCGCAATCCTCTCATGGAAAGCTCT`;
             return { firstCodon, lastCodon, totalCodons };
         }
 
+        // Resolve the PDF dialog's "Export Range" choice into concrete bounds.
+        // Falls back to the whole alignment when the chosen range isn't available
+        // (nothing selected, or the view bounds came back empty), and explains why
+        // in the dialog rather than silently exporting something unexpected.
+        function resolvePdfExportRange(seqCount, maxLength) {
+            const all = {
+                startRow: 0,
+                endRow: Math.max(0, seqCount - 1),
+                startCol: 0,
+                endCol: Math.max(0, maxLength - 1),
+            };
+            const note = document.getElementById('pdfRangeNote');
+            const setNote = (msg) => {
+                if (!note) return;
+                note.textContent = msg || '';
+                note.classList.toggle('hidden', !msg);
+            };
+
+            const mode = document.getElementById('pdfExportRange')?.value || 'all';
+            if (mode === 'all') {
+                setNote('');
+                return all;
+            }
+
+            const clamp = (r) => ({
+                startRow: Math.max(0, Math.min(r.startRow, all.endRow)),
+                endRow: Math.max(0, Math.min(r.endRow, all.endRow)),
+                startCol: Math.max(0, Math.min(r.startCol, all.endCol)),
+                endCol: Math.max(0, Math.min(r.endCol, all.endCol)),
+            });
+
+            if (mode === 'selection') {
+                const s = engine.getSelectionBounds();
+                if (!s || s.minRow === undefined || s.minRow < 0) {
+                    setNote('Nothing is selected — exporting the entire alignment instead.');
+                    return all;
+                }
+                setNote('');
+                return clamp({ startRow: s.minRow, endRow: s.maxRow, startCol: s.minCol, endCol: s.maxCol });
+            }
+
+            if (mode === 'view') {
+                const v = getVisibleBounds();
+                const r = clamp(v);
+                if (r.endRow < r.startRow || r.endCol < r.startCol) {
+                    setNote('Could not determine the visible region — exporting the entire alignment instead.');
+                    return all;
+                }
+                setNote('');
+                return r;
+            }
+
+            setNote('');
+            return all;
+        }
+
         function updatePDFEstimate() {
             if (!engine) return;
 
@@ -11007,10 +11098,15 @@ GATGAGAGGCCGCCGTCTCTAGGCAGGCTACGACGGCGCAATCCTCTCATGGAAAGCTCT`;
 
             const seqCount = engine.getSequenceCount();
             const maxLength = engine.getMaxLength();
-            let startRow = 0;
-            let endRow = Math.max(0, seqCount - 1);
-            let startCol = 0;
-            let endCol = Math.max(0, maxLength - 1);
+
+            // Resolve the requested export range. The engine's exportToPDF* already
+            // takes arbitrary row/column bounds, so this is purely a matter of
+            // choosing them; everything downstream derives from these four values.
+            const range = resolvePdfExportRange(seqCount, maxLength);
+            let startRow = range.startRow;
+            let endRow = range.endRow;
+            let startCol = range.startCol;
+            let endCol = range.endCol;
 
             const totalRows = Math.max(1, endRow - startRow + 1);
             let totalCols = Math.max(1, endCol - startCol + 1);

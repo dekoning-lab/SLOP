@@ -25,7 +25,7 @@ SLOP pairs a WebGL front end with a WebAssembly (C++) engine, so editing stays s
 - **A viewport built for scale.** Virtual scrolling, GPU-instanced text rendering, viewport culling, and sticky rulers keep large alignments responsive.
 - **Mode-aware rendering.** Switch instantly between nucleotide, codon, and translated amino-acid views. Codon mode applies amino-acid palettes per triplet, amino mode collapses columns without blank spacers, and nucleotide mode uses classic colours. Multiple genetic codes are supported.
 - **Precise editing.** Drag-to-gap, ⌘/Ctrl-click column selection, sequence reordering, gap removal, and undo/redo — all backed by the WebAssembly engine for deterministic behaviour.
-- **Vector PDF export.** Generates true vector PDFs that mirror the on-screen mode, colour scheme, and genetic code, with multi-block page layouts, `page/total` headers, and a "fit to pages" workflow that warns before it would compromise readability.
+- **Vector PDF export.** Generates true vector PDFs that mirror the on-screen mode, colour scheme, and genetic code, with multi-block page layouts, `page/total` headers, and a "fit to pages" workflow that warns before it would compromise readability. Export the whole alignment, just the current selection, or just what's on screen.
 - **Image export and minimap.** Export the viewport as an image, and navigate long alignments with a live minimap preview.
 
 ## Running it
@@ -91,11 +91,6 @@ Verbose logging is off by default in both layers. For the renderer, set `window.
 ```bash
 EMCC_EXTRA_FLAGS=-DSLOP_DEBUG ./build_wasm.sh
 ```
-
-## Known limitations
-
-- In translated amino-acid view, ⌘/Ctrl-click selection does not work on column 0.
-- Range-based PDF export (selection-only or current-view) is currently disabled pending a rewrite on top of the current page estimator.
 
 ## Requirements
 
